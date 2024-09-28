@@ -1,0 +1,420 @@
+---
+title: "Untitled"
+author: "NIKUNJ VAVIYA"
+date: "2024-06-11"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+```{r}
+mldata <- read.table("C:/Users/HELLO/OneDrive - University of West London/Desktop/merged_data_for_ML.txt", header = TRUE, sep = "\t")
+dim(mldata)
+```
+
+```{r}
+summary(mldata$meth.diff)
+```
+```{r}
+str(mldata)
+```
+
+```{r}
+sum(is.na(mldata))
+```
+```{r}
+# Convert categorical variables to factors
+mldata$gene_id <- as.factor(mldata$gene_id)
+mldata$condition <- as.factor(mldata$condition)
+```
+
+# feature selction to reduce the demention of data
+```{r}
+# Check the number of unique levels in the gene_id column
+nlevels(mldata$gene_id)
+```
+# filter dataset bas on 
+qvalue_threshold <- 0.01
+meth_diff_threshold <- 25
+
+```{r}
+# Define a more stringent q-value threshold (e.g., 0.01 instead of 0.05)
+qvalue_threshold <- 0.05
+
+# Optionally, define a meth.diff threshold (e.g., absolute value greater than 50)
+meth_diff_threshold <- 25
+
+# Identify significant genes based on the new thresholds
+significant_genes <- unique(mldata$gene_id[mldata$qvalue < qvalue_threshold & abs(mldata$meth.diff) > meth_diff_threshold])
+
+# Subset data based on the significant genes
+mldata_subset <- mldata[mldata$gene_id %in% significant_genes, ]
+
+# Reassign new levels to gene_id
+mldata_subset$gene_id <- factor(mldata_subset$gene_id)
+
+# Check the levels of gene_id after further reduction
+length(levels(mldata_subset$gene_id))
+```
+
+
+```{r}
+summary(mldata_subset)
+```
+
+```{r}
+#sum(is.na(mldata_subset))
+
+#mldata_subset <- na.omit(mldata_subset)
+```
+
+```{r}
+str(mldata_subset)
+```
+
+```{r}
+library(tidyr)
+library(dplyr)
+```
+
+
+```{r}
+mldata_subset$gene_id <- as.character(mldata_subset$gene_id)
+mldata_subset$condition <- as.character(mldata_subset$condition)
+```
+
+```{r}
+# Custom function to calculate mode
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+```
+```{r}
+# reshaping the data as columns become gene name and raw become samples with value of numbers of t 
+reshaped_data <- mldata_subset %>%
+  dplyr::select(gene_id, condition, numTs) %>%
+  group_by(gene_id, condition) %>%
+  summarise(mode_numTs = Mode(numTs)) %>%
+  pivot_wider(names_from = gene_id, values_from = mode_numTs)
+```
+
+```{r}
+# Print the reshaped data
+dim(reshaped_data)
+```
+
+```{r}
+colnames(reshaped_data)[1] <- 'sampleName' 
+```
+
+#checking missing values
+```{r}
+sum(is.na(reshaped_data))
+```
+
+# normalization of data 
+```{r}
+gene_data <- reshaped_data[, -1]
+
+# Apply min-max scaling (Normalization)
+normalized_data <- apply(gene_data, 2, function(x) (x - min(x)) / (max(x) - min(x)))
+# Convert the normalized data back to a data frame and reattach the 'condition' column
+normalized_data <- as.data.frame(normalized_data)
+
+normalized_data <- cbind(sampleName = reshaped_data[, 1], normalized_data)
+```
+
+
+
+# setting target column 
+```{r}
+normalized_data$target <- ifelse(grepl("^PE", normalized_data$sampleName), 1, 0)
+```
+
+```{r}
+# Check the structure of your data
+normalized_data$target
+normalized_data$sampleName
+```
+```{r}
+unique(normalized_data$target)
+
+```
+
+```{r}
+normalized_data$target <- factor(normalized_data$target, levels = c("0", "1"), labels = c("control", "PE"))
+```
+
+
+```{r}
+levels(normalized_data$target)
+```
+```{r}
+# Assuming 'sampleName' is already a character vector in your 'normalized_data' dataframe
+normalized_data$sampleName <- factor(normalized_data$sampleName)
+
+# Check levels to ensure consistency
+levels(normalized_data$sampleName)
+```
+
+
+# model bulding 
+
+```{r}
+library(randomForest) 
+library(caTools)  
+library(caret)
+```
+
+
+```{r}
+# Splitting the data into training and testing sets 
+set.seed(126) 
+train_indices <- sample(seq_len(nrow(normalized_data)), size = floor(0.70 * nrow(normalized_data)))
+train_data <- normalized_data[train_indices, ]
+test_data <- normalized_data[-train_indices, ]
+```
+```{r}
+dim(train_data)
+```
+```{r}
+levels(train_data$target)
+levels(test_data$target)
+```
+```{r}
+cat("Training set dimensions:", dim(train_data), "\n")
+cat("Testing set dimensions:", dim(test_data), "\n")
+```
+
+```{r}
+RF_model <- train(target ~., data= normalized_data, method ="rf")
+print(RF_model)
+```
+
+
+```{r}
+RF_predictions <- predict(RF_model, newdata = test_data)
+RF_conf_matrix <- confusionMatrix(RF_predictions, test_data$target)
+print(RF_conf_matrix)
+```
+
+
+```{r}
+ctrl <- trainControl(method = "cv", number = 5, classProbs = TRUE, summaryFunction = twoClassSummary)
+RF_model_cv <- train(target ~ ., data = normalized_data, method = "rf", trControl = ctrl)
+```
+```{r}
+print(RF_model_cv)
+```
+
+```{r}
+ctrl2 <- trainControl(method = "cv", number = 8, classProbs = TRUE, summaryFunction = twoClassSummary)
+RF_model_cv2 <- train(target ~ ., data = normalized_data, method = "rf", trControl = ctrl2)
+print(RF_model_cv2)
+```
+
+```{r}
+RFCV_predictions <- predict(RF_model_cv, newdata = test_data)
+RFCV_conf_matrix <- confusionMatrix(RFCV_predictions, test_data$target)
+print(RFCV_conf_matrix)
+```
+
+```{r}
+# Load ggplot2 for visualization
+library(ggplot2)
+library(pROC)
+```
+
+```{r}
+# Convert the confusion matrix to a data frame
+RF_conf_matrix_df <- as.data.frame(RF_conf_matrix$table)
+
+# Plot the confusion matrix heatmap
+ggplot(RF_conf_matrix_df, aes(x = Prediction, y = Reference, fill = Freq)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "white", high = "steelblue") +
+  geom_text(aes(label = Freq), vjust = 1) +
+  labs(x = "Predicted Class", y = "Actual Class", 
+       title = "Confusion Matrix for RF_model",
+       fill = "Frequency") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  coord_fixed()  # ensures square tiles
+```
+
+```{r}
+# Convert the confusion matrix to a data frame
+RFCV_conf_matrix_df <- as.data.frame(RFCV_conf_matrix$table)
+
+# Plot the confusion matrix heatmap
+ggplot(RFCV_conf_matrix_df, aes(x = Prediction, y = Reference, fill = Freq)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "white", high = "steelblue") +
+  geom_text(aes(label = Freq), vjust = 1) +
+  labs(x = "Predicted Class", y = "Actual Class", 
+       title = "Confusion Matrix for RF_model_cv",
+       fill = "Frequency") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  coord_fixed()  # ensures square tiles
+```
+
+
+```{r}
+# Compute the ROC curve
+RF_roc_curve <- roc(test_data$target, as.numeric(RF_predictions))
+
+# Plot the ROC curve
+plot(RF_roc_curve, main = "ROC Curve for RF_model")
+# Compute the ROC curve
+RFCV_roc_curve <- roc(test_data$target, as.numeric(RFCV_predictions))
+
+# Plot the ROC curve
+plot(RFCV_roc_curve, main = "ROC Curve for RF_model_cv")
+```
+
+
+```{r}
+# Compute precision, recall, and F1-score for RF_model
+RF_precision <- RF_conf_matrix$byClass["Precision"]
+RF_recall <- RF_conf_matrix$byClass["Recall"]
+RF_f1_score <- RF_conf_matrix$byClass["F1"]
+RF_auc <- auc(RF_roc_curve)
+
+# Print the computed metrics
+cat("RF_model Precision:", RF_precision, "\n")
+cat("RF_model Recall:", RF_recall, "\n")
+cat("RF_model F1-score:", RF_f1_score, "\n")
+cat("RF_model AUC:", RF_auc, "\n")
+
+# Compute precision, recall, and F1-score for RF_model_cv
+RFCV_precision <- RFCV_conf_matrix$byClass["Precision"]
+RFCV_recall <- RFCV_conf_matrix$byClass["Recall"]
+RFCV_f1_score <- RFCV_conf_matrix$byClass["F1"]
+RFCV_auc <- auc(RFCV_roc_curve)
+
+# Print the computed metrics
+cat("RF_model_cv Precision:", RFCV_precision, "\n")
+cat("RF_model_cv Recall:", RFCV_recall, "\n")
+cat("RF_model_cv F1-score:", RFCV_f1_score, "\n")
+cat("RF_model_cv AUC:", RFCV_auc, "\n")
+```
+
+
+# second ml model SVM 
+
+```{r}
+library(e1071)
+svm_model <- svm(target ~ ., data = train_data, probability = TRUE)
+```
+```{r}
+# Make predictions on the test set
+svm_predictions_BASE <- predict(svm_model, newdata = test_data, probability = TRUE)
+
+# Generate the confusion matrix
+svm_conf_matrix_BASE <- confusionMatrix(svm_predictions_BASE, test_data$target)
+print(svm_conf_matrix_BASE)
+
+```
+```{r}
+precisionSVM <- svm_conf_matrix_BASE$byClass["Precision"]
+recallSVM <- svm_conf_matrix_BASE$byClass["Recall"]
+f1_scoreSVM <- svm_conf_matrix_BASE$byClass["F1"]
+roc_curveSVM <- roc(test_data$target, as.numeric(svm_predictions_BASE))
+aucSVM <- auc(roc_curveSVM)
+cat("Precision:", precisionSVM, "\n")
+cat("Recall:", recallSVM, "\n")
+cat("F1-score:", f1_scoreSVM, "\n")
+cat("AUC:", aucSVM, "\n")
+```
+
+
+```{r}
+# Define cross-validation control
+ctrlsvm <- trainControl(method = "cv", number = 6)
+
+svm_model_cv <- train(target ~ ., data = train_data, method = "svmRadial", trControl = ctrlsvm)
+```
+```{r}
+print(svm_model_cv)
+```
+```{r}
+svmCV_predictions <- predict(svm_model_cv, newdata = test_data)
+svmCV_metrics <- confusionMatrix(svmCV_predictions, test_data$target)
+print(svmCV_metrics)
+```
+```{r}
+precisionSVMCV <- svmCV_metrics$byClass["Precision"]
+recallSVMCV <- svmCV_metrics$byClass["Recall"]
+f1_scoreSVMCV <- svmCV_metrics$byClass["F1"]
+roc_curveSVMCV <- roc(test_data$target, as.numeric(svmCV_predictions))
+aucSVMCV <- auc(roc_curveSVMCV)
+cat("Precision:", precisionSVMCV, "\n")
+cat("Recall:", recallSVMCV, "\n")
+cat("F1-score:", f1_scoreSVMCV, "\n")
+cat("AUC:", aucSVMCV, "\n")
+```
+```{r}
+# Convert the confusion matrix to a data frame
+svm_conf_matrix_df <- as.data.frame(svmCV_metrics$table)
+
+# Plot the confusion matrix heatmap
+ggplot(svm_conf_matrix_df, aes(x = Prediction, y = Reference, fill = Freq)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "white", high = "steelblue") +
+  geom_text(aes(label = Freq), vjust = 1) +
+  labs(x = "Predicted Class", y = "Actual Class", 
+       title = "Confusion Matrix for SVM Model",
+       fill = "Frequency") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  coord_fixed()  # ensures square tiles
+```
+
+```{r}
+
+plot(roc_curveSVMCV, main = "ROC Curve for SVM Model")
+```
+
+# COMPARISON OF BOTH MODEL ROC 
+
+
+```{r}
+metrics_df <- data.frame(
+  Model = c("RF Model", "RF Model CV", "SVM Model", "SVM CV Model"),
+  Precision = c(RF_precision, RFCV_precision, precisionSVM, precisionSVMCV),
+  Recall = c(RF_recall, RFCV_recall, recallSVM, recallSVMCV),
+  F1_score = c(RF_f1_score, RFCV_f1_score, f1_scoreSVM, f1_scoreSVMCV),
+  AUC = c(RF_auc, RFCV_auc, aucSVM, aucSVMCV)
+)
+
+# Print the table
+knitr::kable(metrics_df, digits = 4)
+```
+
+

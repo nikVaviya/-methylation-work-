@@ -1,0 +1,262 @@
+---
+title: "Untitled"
+author: "NIKUNJ VAVIYA"
+date: "2024-06-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+```{r}
+library(methylKit)
+```
+
+```{r}
+file.list <- list("C:/Users/HELLO/OneDrive - University of West London/Desktop/Control1.cov",
+                  "C:/Users/HELLO/OneDrive - University of West London/Desktop/Control2.cov",
+                  "C:/Users/HELLO/OneDrive - University of West London/Desktop/Control3.cov",
+                  "C:/Users/HELLO/OneDrive - University of West London/Desktop/Control4.cov",
+                  "C:/Users/HELLO/OneDrive - University of West London/Desktop/Control5.cov",
+                  "C:/Users/HELLO/OneDrive - University of West London/Desktop/PE1.cov",
+                  "C:/Users/HELLO/OneDrive - University of West London/Desktop/PE2.cov",
+                  "C:/Users/HELLO/OneDrive - University of West London/Desktop/PE3.cov",
+                  "C:/Users/HELLO/OneDrive - University of West London/Desktop/PE4.cov",
+                  "C:/Users/HELLO/OneDrive - University of West London/Desktop/PE5.cov")
+```
+
+```{r}
+# read the files to a methylRawList object: myobj
+myobj <- methRead(file.list, 
+              sample.id = list("ctrl1", "ctrl2","ctrl3","ctrl4","ctrl5","test1", "test2", "test3","test4","test5"),
+              assembly = "hg38",
+              pipeline = "bismarkCoverage",
+              treatment = c(0,0,0,0,0,1,1,1,1,1),
+              context = "CpG"
+              )
+```
+
+```{r}
+myobj
+```
+```{r}
+getCoverageStats(myobj[[1]], plot = TRUE )
+getCoverageStats(myobj[[2]], plot = TRUE )
+getCoverageStats(myobj[[3]], plot = TRUE )
+getCoverageStats(myobj[[4]], plot = TRUE )
+getCoverageStats(myobj[[5]], plot = TRUE )
+getCoverageStats(myobj[[6]], plot = TRUE )
+getCoverageStats(myobj[[7]], plot = TRUE )
+getCoverageStats(myobj[[8]], plot = TRUE )
+getCoverageStats(myobj[[9]], plot = TRUE )
+getCoverageStats(myobj[[10]], plot = TRUE )
+```
+
+```{r}
+# Filter out CpGs with less than 5x coverage and greater than the 99.9th percentile of coverage
+filtered.myobj <- filterByCoverage(myobj, 
+                                   lo.count = 5, lo.perc = NULL, 
+                                   hi.count = NULL, hi.perc = 99.9)
+
+# Check the filtered object
+summary(filtered.myobj)
+
+```
+```{r}
+# Reorganize the data for pairwise comparison
+myComparison <- reorganize(filtered.myobj,
+                           sample.id = list("ctrl1", "ctrl2","ctrl3","ctrl4","ctrl5","test1", "test2", "test3","test4","test5"),
+                           treatment = c(0,0,0,0,0,1,1,1,1,1),
+                           )
+
+# Check the reorganized object
+summary(myComparison)
+
+```
+```{r}
+# Unite the samples for differential methylation analysis
+meth <- unite(myComparison, destrand = FALSE)
+```
+```{r}
+str(meth)
+```
+
+
+```{r}
+# Calculate differential methylation
+myDiff <- calculateDiffMeth(meth, test = "Chisq", overdispersion = "MN")
+#performing 'Chisq' instead of 'fast.fisher' for more than two groups testing.
+# Get significant DMRs with an absolute methylation difference >10% and q value < 0.1
+diffMeth <- getMethylDiff(myDiff, difference = 10, qvalue = 0.1)
+
+# Check the significant DMRs
+head(diffMeth)
+
+```
+```{r}
+dim(diffMeth)
+```
+```{r}
+# save the file for the further analysis 
+write.table(diffMeth, file = "significant_DMRs.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+```
+
+# Annotation can be done using external tools like bedtools and Ensembl GTF file
+# Example commands (run in shell):
+# bedtools intersect -a significant_DMRs.txt -b GRCh38.103.gtf -wa -wb > annotated_DMRs.txt
+```{r}
+# Load annotated DMRs back into R
+annotated_DMRs <- read.table("annotated_DMRs.txt", header = FALSE, sep = "\t")
+colnames(annotated_DMRs) <- c("chrom", "start", "end", "strand", "pvalue", "qvalue", "meth.diff", 
+                   "chrom_gtf", "source_gtf", "feature_gtf", "start_gtf", "end_gtf", 
+                   "score_gtf", "strand_gtf", "frame_gtf", "attributes_gtf")
+
+# Process the annotation results as needed
+head(annotated_DMRs)
+```
+
+```{r}
+dim(annotated_DMRs)
+```
+in summary, you have 17931 DMRs in your annotation file, and each DMR is described by 16 different attributes or features.
+
+```{r}
+# Function to extract attribute values
+extract_attribute <- function(attributes, key) {
+  # Split each row into separate key-value pairs
+  attribute_pairs <- strsplit(attributes, "; ")
+  
+  # Find the key-value pair containing the desired key
+  key_value_pair <- sapply(attribute_pairs, function(pair) {
+    matching_key <- grep(paste0("^", key, " "), pair)
+    if (length(matching_key) > 0) {
+      return(pair[matching_key])
+    } else {
+      return(NA)
+    }
+  })
+  
+  # Extract the value from the key-value pair
+  attribute_values <- sapply(key_value_pair, function(pair) {
+    if (!is.na(pair)) {
+      value <- strsplit(pair, " ")[[1]][2]
+      return(value)
+    } else {
+      return(NA)
+    }
+  })
+  
+  return(attribute_values)
+}
+
+# Extract gene_id, gene_name, transcript_id, and gene_biotype
+annotated_DMRs$gene_id <- extract_attribute(annotated_DMRs$attributes_gtf, "gene_id")
+annotated_DMRs$gene_name <- extract_attribute(annotated_DMRs$attributes_gtf, "gene_name")
+annotated_DMRs$transcript_id <- extract_attribute(annotated_DMRs$attributes_gtf, "transcript_id")
+annotated_DMRs$gene_biotype <- extract_attribute(annotated_DMRs$attributes_gtf, "gene_biotype")
+
+# Check the updated data frame
+head(annotated_DMRs)
+
+
+```
+```{r}
+str(annotated_DMRs)
+```
+
+
+```{r}
+# unique genes
+unique_gene_names <- unique(annotated_DMRs$gene_name)
+num_genes <- length(unique(annotated_DMRs$gene_name))
+print(head(unique_gene_names,10))
+num_genes
+
+#unique features
+unique_feature_names <- unique(annotated_DMRs$feature_gtf)
+num_features <- length(unique(annotated_DMRs$feature_gtf))
+print(unique_feature_names)
+num_features
+
+# Load necessary library
+library(ggplot2)
+
+# Count the frequency of each feature
+feature_counts <- table(annotated_DMRs$feature_gtf)
+
+# Create a data frame for plotting
+feature_data <- data.frame(feature = names(feature_counts),
+                           count = as.numeric(feature_counts))
+
+feature_data$percentage <- round(100 * feature_data$count / sum(feature_data$count), 1)
+
+# Pie chart with percentage labels
+ggplot(feature_data, aes(x = "", y = count, fill = feature, label = paste0(feature, " (", percentage, "%)"))) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) +
+  theme_void() +
+  geom_text(position = position_stack(vjust = 0.5), color = "white") +
+  labs(title = "Distribution of Features in Annotated DMRs")
+```
+
+```{r}
+# Load required libraries
+library(ggplot2)
+```
+
+```{r}
+# Histogram of methylation differences
+hist(annotated_DMRs$meth.diff, 
+     main = "Distribution of Methylation Differences", 
+     xlab = "Methylation Difference (%)", 
+     breaks = 50)
+
+```
+```{r}
+# Assuming you have methylation data in your annotated_DMRs data frame, let's say in columns "pvalue" and "meth.diff"
+
+# Volcano plot
+ggplot(annotated_DMRs, aes(x = meth.diff, y = -log10(pvalue))) +
+  geom_point(size = 1, alpha = 0.5) +
+  labs(x = "Methylation Difference", y = "-log10(P-value)") +
+  ggtitle("Volcano Plot of Methylation Analysis") +
+  theme_minimal()
+
+```
+
+```{r}
+# Load clusterProfiler package
+library(clusterProfiler)
+
+# Perform functional enrichment analysis
+enrichment_results <- enrichKEGG(gene = annotated_DMRs$gene_name, organism = 'hsa')
+summary(enrichment_results)
+
+```
+
+
+
+
+
+

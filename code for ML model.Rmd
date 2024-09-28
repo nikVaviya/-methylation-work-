@@ -1,0 +1,212 @@
+---
+title: "Untitled"
+author: "NIKUNJ VAVIYA"
+date: "2024-06-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+```
+
+
+```{r}
+# Function to load and label data
+load_and_label <- function(files, condition_label) {
+  df_list <- lapply(files, function(file) {
+    df <- read.table(file, header = FALSE, sep = "\t", stringsAsFactors = FALSE)
+    colnames(df) <- c("chrom", "start", "end", "coverage", "numCs", "numTs")
+    df$methylation <- (df$numCs / df$coverage) * 100
+    df$condition <- condition_label
+    return(df)
+  })
+  return(bind_rows(df_list))
+}
+```
+
+
+```{r}
+# Define file paths and condition labels
+control_files <- c(
+  "C:/Users/HELLO/OneDrive - University of West London/Desktop/Control1.cov",
+  "C:/Users/HELLO/OneDrive - University of West London/Desktop/Control2.cov",
+  "C:/Users/HELLO/OneDrive - University of West London/Desktop/Control3.cov",
+  "C:/Users/HELLO/OneDrive - University of West London/Desktop/Control4.cov",
+  "C:/Users/HELLO/OneDrive - University of West London/Desktop/Control5.cov"
+)
+
+pe_files <- c(
+  "C:/Users/HELLO/OneDrive - University of West London/Desktop/PE1.cov",
+  "C:/Users/HELLO/OneDrive - University of West London/Desktop/PE2.cov",
+  "C:/Users/HELLO/OneDrive - University of West London/Desktop/PE3.cov",
+  "C:/Users/HELLO/OneDrive - University of West London/Desktop/PE4.cov",
+  "C:/Users/HELLO/OneDrive - University of West London/Desktop/PE5.cov"
+)
+```
+
+
+```{r}
+# Load and label all data
+control_data <- load_and_label(control_files, "control")
+pe_data <- load_and_label(pe_files, "PE")
+```
+
+
+```{r}
+# Combine all data
+all_data <- bind_rows(control_data, pe_data)
+
+```
+```{r}
+all_data
+```
+
+```{r}
+summary(all_data)
+```
+
+```{r}
+na.
+```
+
+```{r}
+annotated_DMRs <- read.table("annotated_DMRs_cn.txt", header = TRUE, sep = "\t")
+
+head(annotated_DMRs)
+dim(annotated_DMRs)
+```
+```{r}
+summary(annotated_DMRs)
+```
+
+
+```{r}
+merged_data <- merge(annotated_DMRs, all_data, by = c("chrom", "start", "end"))
+
+```
+
+```{r}
+dim(merged_data)
+```
+```{r}
+head(merged_data)
+```
+
+```{r}
+write.table(merged_data, file = "merged_data_for_ML.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+```
+
+```{r}
+str(merged_data)
+```
+
+-------
+```{r}
+# Function to load and label data
+load_and_label <- function(files, condition_label) {
+  df_list <- lapply(seq_along(files), function(i) {
+    df <- read.table(files[i], header = FALSE, sep = "\t", stringsAsFactors = FALSE)
+    colnames(df) <- c("chrom", "start", "end", "coverage", "numCs", "numTs")
+    df$methylation <- (df$numCs / df$coverage) * 100
+    print(paste("Condition label for file", files[i], ":", condition_label, i))
+    df$condition <- paste0(condition_label, i)  # Include file index in condition label
+    return(df)
+  })
+  return(bind_rows(df_list))
+}
+```
+
+```{r}
+control_files <- c(
+  "C:/Users/HELLO/OneDrive - University of West London/Desktop/Control1.cov",
+  "C:/Users/HELLO/OneDrive - University of West London/Desktop/Control2.cov",
+  "C:/Users/HELLO/OneDrive - University of West London/Desktop/Control3.cov",
+  "C:/Users/HELLO/OneDrive - University of West London/Desktop/Control4.cov",
+  "C:/Users/HELLO/OneDrive - University of West London/Desktop/Control5.cov"
+)
+
+pe_files <- c(
+  "C:/Users/HELLO/OneDrive - University of West London/Desktop/PE1.cov",
+  "C:/Users/HELLO/OneDrive - University of West London/Desktop/PE2.cov",
+  "C:/Users/HELLO/OneDrive - University of West London/Desktop/PE3.cov",
+  "C:/Users/HELLO/OneDrive - University of West London/Desktop/PE4.cov",
+  "C:/Users/HELLO/OneDrive - University of West London/Desktop/PE5.cov"
+)
+```
+
+```{r}
+control_data <- load_and_label(control_files, "control")
+```
+
+
+```{r}
+pe_data <- load_and_label(pe_files, "PE")
+
+```
+
+```{r}
+control_data[control_data$coverage == 0 & control_data$condition == "control2", ]
+#unique(pe_data$condition)
+```
+```{r}
+all_data <- bind_rows(control_data, pe_data)
+```
+```{r}
+annotated_DMRs <- read.table("annotated_DMRs_cn.txt", header = TRUE, sep = "\t")
+```
+
+
+```{r}
+annotated_DMRs
+dim(annotated_DMRs)
+```
+```{r}
+annotated_DMRs[annotated_DMRs$gene_id == "ENSG00000038532" ,]
+
+```
+
+```{r}
+merged_data <- merge(annotated_DMRs, all_data, by = c("chrom", "start", "end"))
+
+```
+
+
+
+```{r}
+merged_data[merged_data$gene_id == "ENSG00000279457", ]
+```
+```{r}
+dim(merged_data)
+```
+
+```{r}
+write.table(merged_data, file = "merged_data_for_ML.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+```
+
